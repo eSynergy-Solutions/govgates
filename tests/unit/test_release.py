@@ -304,19 +304,69 @@ def test_dev_target_is_development_and_default():
 # ---------- 7. public release package (Q1, D2) ----------
 
 SHA_USES_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_./-]+@[0-9a-f]{40}$")
-APACHE_MARKERS = [
-    "Apache License",
-    "Version 2.0, January 2004",
-    "TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION",
+# built from parts so this file itself never holds the old licence strings (the tracked-file scan below reads it)
+OLD_LICENSE_MARKERS = ["Apache" + " License", "Apache" + " 2.0"]
+# LOG.md / PLAN.md are internal (never exported by make_release.py) and record the licence history.
+OLD_LICENSE_ALLOWED = {"CHANGELOG.md", "NOTICE", "LOG.md", "PLAN.md"}
+POLYFORM_FIRST_LINE = "# PolyForm Internal Use License 1.0.0"
+POLYFORM_MARKERS = [
+    "<https://polyformproject.org/licenses/internal-use/1.0.0>",
+    "## Internal Business Use",
+    "you may not distribute the software",
 ]
 
 
-def test_license_is_apache_2():
+def test_license_is_polyform_internal_use_1_0_0():
     path = ROOT / "LICENSE"
     assert path.is_file(), "LICENSE is missing at the repo root"
     text = path.read_text(encoding="utf-8")
-    missing = [m for m in APACHE_MARKERS if m not in text]
-    assert not missing, f"LICENSE is not the Apache 2.0 text; missing: {missing}"
+    assert text.splitlines()[0] == POLYFORM_FIRST_LINE, "LICENSE first line is not the PolyForm Internal Use heading"
+    missing = [m for m in POLYFORM_MARKERS if m not in text]
+    assert not missing, f"LICENSE is not the PolyForm Internal Use 1.0.0 text; missing: {missing}"
+
+
+# sha256 of PolyForm-Internal-Use-1.0.0.md as published in github.com/polyformproject/polyform-licenses (LF endings)
+POLYFORM_SHA256 = "3a4a1539d3e265d98a43af998a13e28d4f04fcc35c283bec1e9bf7a86b266ef7"
+
+
+def test_license_is_the_verbatim_upstream_text():
+    import hashlib
+
+    data = (ROOT / "LICENSE").read_bytes().replace(b"\r\n", b"\n")  # a Windows checkout may hold CRLF
+    assert hashlib.sha256(data).hexdigest() == POLYFORM_SHA256, "LICENSE differs from the published licence text"
+
+
+def test_notice_names_polyform_licence():
+    text = (ROOT / "NOTICE").read_text(encoding="utf-8")
+    assert "PolyForm Internal Use License 1.0.0" in text
+
+
+def test_notice_states_0_1_0_was_apache_2():
+    text = (ROOT / "NOTICE").read_text(encoding="utf-8")
+    assert "0.1.0" in text, "NOTICE does not mention release 0.1.0"
+    assert OLD_LICENSE_MARKERS[0] + " 2.0" in text, "NOTICE does not say 0.1.0 was released under the old licence"
+
+
+def test_no_tracked_file_outside_changelog_and_notice_mentions_old_licence():
+    hits: list[str] = []
+    for path in _tracked_files():
+        rel = path.relative_to(ROOT).as_posix()
+        if rel in OLD_LICENSE_ALLOWED or not path.is_file():
+            continue
+        data = path.read_bytes()
+        if b"\0" in data:
+            continue
+        text = data.decode("utf-8", errors="replace")
+        for i, line in enumerate(text.splitlines(), start=1):
+            if any(m in line for m in OLD_LICENSE_MARKERS):
+                hits.append(f"{rel}:{i}")
+    assert not hits, "old licence named outside CHANGELOG.md/NOTICE at: " + ", ".join(hits)
+
+
+def test_pyproject_classifies_licence_as_proprietary():
+    classifiers = _pyproject()["project"].get("classifiers", [])
+    assert "License :: Other/Proprietary License" in classifiers
+    assert "Private :: Do Not Upload" in classifiers  # PyPI refuses uploads carrying it: no accidental publishing
 
 
 def test_notice_exists_and_is_non_empty():

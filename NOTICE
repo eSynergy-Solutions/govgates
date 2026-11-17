@@ -1,7 +1,12 @@
 GovGates accelerator
 Copyright 2026 eSynergy Solutions
 
-This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+From version 0.1.1 this software is licensed under the PolyForm Internal Use License 1.0.0
+(see LICENSE, https://polyformproject.org/licenses/internal-use/1.0.0): you may use and change it for
+the internal business operations of you and your company, but you may not distribute it.
+Clients of eSynergy Solutions may also have rights under their agreement with eSynergy Solutions.
+
+Version 0.1.0 (tag v0.1.0) was released under the Apache License 2.0; that release keeps its licence.
 
 All data, glossary terms, abbreviations and prompt examples in this repository are synthetic.
 They do not describe any real organisation, system or person.

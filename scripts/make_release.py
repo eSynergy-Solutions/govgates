@@ -1,14 +1,19 @@
-"""Build a public release as a fresh-history git repo, outside this repo. Never pushes.
+"""Build a public release as a git repo outside this repo, one commit per release. Never pushes.
 
     python scripts/make_release.py --out <empty dir outside the repo> \
-        --author-name "<name>" --author-email "<email>"
+        --author-name "<name>" --author-email "<email>" --base https://github.com/<org>/<repo>.git
+
+v0.1.0 was the fresh-history first release. Every release since builds on the published main (--base, required),
+so the release is one new commit and the push is a fast-forward. The CHANGELOG heading for VERSION must carry
+the UTC run date.
 
 Steps (stops at the first failure, leaving the output folder for inspection):
  1. This repo's working tree must be clean, so the export is exactly HEAD.
- 2. Copy every tracked, non-excluded file to <out>/repo, apply the rewrite rules from the gitignored
+ 2. Clone the published main (--base) or git init, clear its tree, copy every tracked, non-excluded file in,
+    apply the rewrite rules from the gitignored
     .release-rewrites (`old => new` per line) to text files, then put the public overlay files in place
     (release/CLAUDE.md becomes CLAUDE.md). Fail if any old string is left.
- 3. git init, set the given author as the export repo's LOCAL identity, one commit.
+ 3. Set the given author as the export repo's LOCAL identity, one commit (its parent must be the base main).
  4. Check every author / committer field is exactly the given identity.
  5. Run release_scan.sh inside the export; it reads the denylists in place (GG_DENYLIST_DIR), never copied.
  6. Extract the commit with git archive (LF, exactly what is committed) and run ruff there; run the unit tests
@@ -206,15 +211,98 @@ def _extract(archive: bytes, dst: Path) -> None:
             tf.extractall(dst)
 
 
-def build_release(src: Path, work: Path, name: str, email: str) -> dict[str, str]:
-    """Steps 2-8 inside `work`. Raises ReleaseError on any failure; the caller decides what to keep."""
+def _pinned(name: str, email: str, stamp: str, template: Path) -> tuple[list[str], dict[str, str]]:
+    """git argv prefix with hooks disabled, and an env with the identity and date pinned."""
+    env = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": stamp,
+           "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email, "GIT_COMMITTER_DATE": stamp}
+    return ["git", "-c", "safe.directory=*", "-c", f"core.hooksPath={template.as_posix()}"], env
+
+
+def clear_worktree(repo: Path) -> None:
+    """Delete everything in repo except .git, so the export replaces the tree (files dropped upstream go too)."""
+    for p in repo.iterdir():
+        if p.name == ".git":
+            continue
+        if p.is_dir() and not p.is_symlink():
+            shutil.rmtree(p)
+        else:
+            p.unlink()
+
+
+def start_repo(repo: Path, base: str | None, template: Path) -> str | None:
+    """Fresh repo (base None), or a clone of the published main; returns the base main HEAD sha (or None)."""
+    pin = ["git", "-c", "safe.directory=*", "-c", f"core.hooksPath={template.as_posix()}"]
+    if base is None:
+        repo.mkdir(parents=True, exist_ok=True)
+        _run([*pin, "init", "-q", "-b", "main", f"--template={template.as_posix()}"], repo)
+        return None
+    repo.parent.mkdir(parents=True, exist_ok=True)
+    _run([*pin, "clone", "-q", "--branch", "main", f"--template={template.as_posix()}", base, str(repo)], repo.parent)
+    return _git(repo, "rev-parse", "HEAD").strip()
+
+
+def commit_release(repo: Path, written: list[str], name: str, email: str, tag: str, base_head: str | None,
+                   stamp: str, template: Path) -> str:
+    """One commit of the exported tree (on top of base_head when given). Never creates the tag."""
+    for k, v in (("user.name", name), ("user.email", email), ("commit.gpgsign", "false"),
+                 ("tag.gpgsign", "false"), ("core.autocrlf", "false")):
+        _git(repo, "config", "--local", k, v)
+    if _git(repo, "tag", "-l", tag).strip():
+        raise ReleaseError(f"{tag} already exists in the published repo: bump VERSION, never move a tag")
+    _git(repo, "add", "-A")
+    committed = sorted(p for p in _git(repo, "ls-files", "-z").split("\0") if p)
+    if committed != sorted(written):  # a .gitignore or global excludesFile must not silently drop a file
+        raise ReleaseError(f"git add did not stage exactly the exported files: {sorted(set(written) ^ set(committed))}")
+    pin, env = _pinned(name, email, stamp, template)
+    _run([*pin, "commit", "-q", "--no-verify", "-m", f"govgates {tag}"], repo, env)
+    if base_head is not None:
+        parents = _git(repo, "rev-list", "--parents", "-n", "1", "HEAD").split()[1:]
+        if parents != [base_head]:
+            raise ReleaseError("the release commit is not a fast-forward of the published main")
+    check_identity(repo, name, email)
+    return _git(repo, "rev-parse", "HEAD").strip()
+
+
+def check_base_url(base: str) -> None:
+    """The base must be the published remote: an https URL, never a local path or file:// (internal history)."""
+    if not re.fullmatch(r"https://[^\s/]+/\S+", base):
+        raise ReleaseError("--base must be the published repo's https:// URL")
+
+
+_CHANGELOG_HEADING = re.compile(r"^## \[(?P<v>[^\]]+)\] - (?P<d>\d{4}-\d{2}-\d{2})\s*$", re.MULTILINE)
+
+
+def changelog_date(text: str, version: str) -> str | None:
+    """The date on the CHANGELOG heading for `version`, or None if there is no such heading."""
+    for m in _CHANGELOG_HEADING.finditer(text):
+        if m.group("v") == version:
+            return m.group("d")
+    return None
+
+
+def build_release(src: Path, work: Path, name: str, email: str, base: str | None = None,
+                  state: dict | None = None) -> dict[str, str]:
+    """Steps 2-8 inside `work`. Raises ReleaseError on any failure; the caller decides what to keep.
+
+    `state["tagged"]` is set once this run has created the tag, so a failure handler deletes only its own tag."""
+    state = {} if state is None else state
     version = (src / "VERSION").read_text(encoding="utf-8").strip()
     tag = tag_name(version)
     rules = parse_rewrites((src / ".release-rewrites").read_text(encoding="utf-8"))
     head = _git(src, "rev-parse", "--short", "HEAD").strip()
 
-    # 2. export
+    # 2-4. repo: the published main (base) or a fresh one; tree replaced by the export; one commit on top
+    empty = work / "empty-template"
+    empty.mkdir()
     repo = work / "repo"
+    base_head = start_repo(repo, base, empty)
+    if base is not None:
+        # the clone must be the published release line: an earlier v* tag reachable from main
+        if not _git(repo, "tag", "--merged", "HEAD", "-l", "v*").strip():
+            raise ReleaseError("--base has no earlier v* release tag on main: is it the published repo?")
+        if _git(repo, "ls-remote", "--tags", "origin", f"refs/tags/{tag}").strip():
+            raise ReleaseError(f"{tag} already exists on the published repo: bump VERSION, never move a tag")
+    clear_worktree(repo)
     paths = [p for p in _git(src, "ls-files", "-z").split("\0") if p]
     try:
         written = export_tree(src, repo, paths, rules)
@@ -223,28 +311,11 @@ def build_release(src: Path, work: Path, name: str, email: str) -> dict[str, str
     left = leftover(repo, rules)
     if left:
         raise ReleaseError(f"rewrite sources still present in {len(left)} file(s): {', '.join(left)}")
-    print(f"exported {len(written)} files from {head}")
-
-    # 3-4. fresh history: identity, dates and hooks pinned, nothing taken from global git config
-    empty = work / "empty-template"
-    empty.mkdir()
+    print(f"exported {len(written)} files from {head}" + (f" on top of {base_head[:7]}" if base_head else ""))
     # the actual run time, in UTC so the local timezone never reaches the public metadata
     stamp = f"{dt.datetime.now(dt.UTC):%Y-%m-%dT%H:%M:%S}+0000"
-    genv = {**os.environ, "GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_AUTHOR_DATE": stamp,
-            "GIT_COMMITTER_NAME": name, "GIT_COMMITTER_EMAIL": email, "GIT_COMMITTER_DATE": stamp}
-    pin = ["git", "-c", "safe.directory=*", "-c", f"core.hooksPath={empty.as_posix()}"]
-    repo.mkdir(parents=True, exist_ok=True)
-    _run([*pin, "init", "-q", "-b", "main", f"--template={empty.as_posix()}"], repo)
-    for k, v in (("user.name", name), ("user.email", email), ("commit.gpgsign", "false"),
-                 ("tag.gpgsign", "false"), ("core.autocrlf", "false")):
-        _git(repo, "config", "--local", k, v)
-    _git(repo, "add", "-A")
-    committed = sorted(p for p in _git(repo, "ls-files", "-z").split("\0") if p)
-    if committed != written:  # a .gitignore or global excludesFile must not silently drop a file
-        raise ReleaseError(f"git add did not stage exactly the exported files: {sorted(set(written) ^ set(committed))}")
-    _run([*pin, "commit", "-q", "--no-verify", "-m", f"govgates {tag}"], repo, genv)
-    check_identity(repo, name, email)
-    commit = _git(repo, "rev-parse", "HEAD").strip()
+    commit = commit_release(repo, written, name, email, tag, base_head, stamp, empty)
+    pin, genv = _pinned(name, email, stamp, empty)
 
     # 5. scan: denylists read in place from the source repo, never copied into the export
     r = subprocess.run([_bash(), "scripts/release_scan.sh"], cwd=repo, capture_output=True, text=True,
@@ -284,8 +355,9 @@ def build_release(src: Path, work: Path, name: str, email: str) -> dict[str, str
 
     # 8. tag (same pinned identity and date), then check the tagger
     _run([*pin, "tag", "-a", tag, "-m", f"govgates {tag}"], repo, genv)
+    state["tagged"] = True
     check_identity(repo, name, email, tag)
-    return {"commit": commit, "tag": tag, "sums": sums, "head": head}
+    return {"commit": commit, "tag": tag, "sums": sums, "head": head, "parent": base_head or ""}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -293,7 +365,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", required=True, type=Path, help="empty or new folder outside this repo")
     ap.add_argument("--author-name", required=True)
     ap.add_argument("--author-email", required=True)
+    # Required: v0.1.0 is published, so a release without a base would be a new root commit needing a force push.
+    ap.add_argument("--base", required=True,
+                    help="published repo https URL: the release is one commit on top of its main (a fast-forward)")
     a = ap.parse_args(argv)
+    check_base_url(a.base)
 
     src = Path(_git(Path.cwd(), "rev-parse", "--show-toplevel").strip()).resolve()
     out = a.out.resolve()
@@ -314,26 +390,33 @@ def main(argv: list[str] | None = None) -> int:
     for d in DENYLISTS:
         if not (src / d).is_file():
             raise ReleaseError(f"{d} missing: the scan can't run without it")
-    tag = tag_name((src / "VERSION").read_text(encoding="utf-8").strip())
+    version = (src / "VERSION").read_text(encoding="utf-8").strip()
+    tag = tag_name(version)
+    today = f"{dt.datetime.now(dt.UTC):%Y-%m-%d}"
+    dated = changelog_date((src / "CHANGELOG.md").read_text(encoding="utf-8"), version)
+    if dated != today:  # the commit and tag carry the UTC run date; the public changelog must agree
+        raise ReleaseError(f"CHANGELOG.md heading for {version} is dated {dated}, but the UTC run date is {today}")
 
     # Everything is built in .incomplete and only renamed to release/ (RELEASE_OK written last) when every step
-    # passed. A failed run leaves .incomplete, with the tag deleted.
+    # passed. A failed run leaves .incomplete, with this run's tag (never a published one) deleted.
     work = out / ".incomplete"
     work.mkdir(parents=True)
+    state: dict = {}
     try:
-        r = build_release(src, work, a.author_name, a.author_email)
+        r = build_release(src, work, a.author_name, a.author_email, a.base, state)
         final = out / "release"
         os.replace(work, final)
     except BaseException:
-        if (work / "repo" / ".git").is_dir():
+        if state.get("tagged") and (work / "repo" / ".git").is_dir():
             subprocess.run(["git", "-c", "safe.directory=*", "tag", "-d", tag], cwd=work / "repo", capture_output=True)
         print(f"NOT RELEASED: partial output kept in {work} for inspection; do not push from it.", file=sys.stderr)
         raise
-    summary = (f"commit {r['commit']}\ntag    {r['tag']}\nauthor {a.author_name} <{a.author_email}>\n"
-               f"from   {r['head']}\n\n{r['sums']}")
+    summary = (f"commit {r['commit']}\nparent {r['parent']}\nbase   {a.base}\ntag    {r['tag']}\n"
+               f"author {a.author_name} <{a.author_email}>\nfrom   {r['head']}\n\n{r['sums']}")
     (final / "RELEASE_OK").write_text(summary, encoding="utf-8", newline="\n")
     print(f"READY TO REVIEW: {final / 'repo'}  (RELEASE_OK written)\n{summary}"
-          f"dist: {final / 'dist'}\nNo remote is set and nothing was pushed.")
+          f"dist: {final / 'dist'}\n"
+          f"origin = {a.base}: push main + {r['tag']} as a fast-forward, never --force. Nothing was pushed.")
     return 0
 
 

@@ -3,6 +3,15 @@
 All notable changes to this project are listed here. Versions follow [Semantic Versioning](https://semver.org);
 before 1.0.0 a minor version may change behaviour. Published tags are never moved: a fix is a new tag.
 
+## [0.1.1] - 2026-11-17
+
+### Changed
+
+- Licence: from this version the accelerator is licensed under the PolyForm Internal Use License 1.0.0
+  (use and change it for your organisation's internal business operations; no distribution). Version 0.1.0
+  was released under the Apache License 2.0 and keeps that licence. See `LICENSE` and `NOTICE`.
+- Release tooling builds each new tag on top of the published `main`, so history only moves forward.
+
 ## [0.1.0] - 2026-11-17
 
 First public release. Runs end to end on the bundled synthetic data.

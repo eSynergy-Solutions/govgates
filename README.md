@@ -15,7 +15,8 @@ values are ever sent to the model.
 
 **Everything in this repo is synthetic**: data, glossary, abbreviations, golden set and prompt examples.
 
-Version: see `VERSION` and `CHANGELOG.md`. Licence: Apache 2.0.
+Version: see `VERSION` and `CHANGELOG.md`. Licence: [PolyForm Internal Use 1.0.0](LICENSE): use and change it inside
+your organisation; do not distribute it. See `NOTICE`.
 
 ## What's in the box
 

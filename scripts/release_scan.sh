@@ -4,7 +4,8 @@
 # Checks, against .client-denylist (whole words) and .release-denylist (substrings, e.g. internal
 # repo names, tool names, our own workspace host), plus built-in patterns for hosts and secrets:
 #   1. HEAD: every tracked file.               Any hit = FAIL (the release ships HEAD).
-#   2. History: every commit on every branch,  Hits = the release MUST use fresh history.
+#   2. History: every commit on every branch,  Hits in the internal repo: never push it, release only through
+#      scripts/make_release.py. Hits inside a release export: stop and escalate (published history can't change).
 #      commit messages and branch names.
 #   2b. Identities: commit author/committer and tag tagger names and emails (and, with
 #      GG_RELEASE_EMAIL set, that every one uses that email).
@@ -120,11 +121,11 @@ if [ "$id_fail" -ne 0 ]; then
 fi
 if [ "$head_fail" -ne 0 ] || [ "$basics" -ne 0 ] || [ "$id_blocks" -ne 0 ]; then
   echo "NOT READY: fix HEAD hits, identities and basics above."
-  [ "$hist_hits" -ne 0 ] && echo "History also has hits: publish with fresh history (squash into a new repo), never push this history."
+  [ "$hist_hits" -ne 0 ] && echo "History also has hits: never push this history; release only through make_release.py."
   exit 1
 fi
 if [ "$hist_hits" -ne 0 ]; then
-  echo "HEAD CLEAN, HISTORY DIRTY: publish a fresh-history copy only."
+  echo "HEAD CLEAN, HISTORY DIRTY: internal repo -> release only through make_release.py; release export -> stop and escalate, never force-push."
   exit 1
 fi
 echo "READY"

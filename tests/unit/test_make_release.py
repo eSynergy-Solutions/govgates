@@ -360,3 +360,203 @@ def test_check_identity(mr, tmp_path):
     _git(tmp_path, "-c", "commit.gpgsign=false", "commit", "-q", "-a", "--no-verify", "-m", "two", env=other)
     with pytest.raises(mr.ReleaseError):
         mr.check_identity(tmp_path, "Rel Ease", "rel@example.com")
+
+
+# ---------- clear_worktree / start_repo / commit_release (real git, local config only) ----------
+
+REL_NAME, REL_EMAIL = "Rel Ease", "rel@example.com"
+STAMP = "2026-11-18T09:00:00+0000"
+
+
+def _who(name: str = REL_NAME, email: str = REL_EMAIL) -> dict[str, str]:
+    return {"GIT_AUTHOR_NAME": name, "GIT_AUTHOR_EMAIL": email, "GIT_COMMITTER_NAME": name,
+            "GIT_COMMITTER_EMAIL": email}
+
+
+def _out(cwd, *args) -> str:
+    import subprocess
+
+    return subprocess.run(["git", "-c", "safe.directory=*", *args], cwd=cwd, check=True, capture_output=True,
+                          text=True).stdout
+
+
+def _write_files(root: Path, files: dict[str, str]) -> None:
+    for rel, text in files.items():
+        p = root / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(text.encode("utf-8"))
+
+
+def _make_base(tmp_path: Path, email: str = REL_EMAIL) -> tuple[Path, str]:
+    """A published-main stand-in: one commit on main by the given identity, annotated tag v0.0.1."""
+    base = tmp_path / "base"
+    base.mkdir()
+    _git(base, "init", "-q", "-b", "main")
+    for k, v in (("user.name", REL_NAME), ("user.email", email), ("commit.gpgsign", "false"),
+                 ("tag.gpgsign", "false"), ("core.autocrlf", "false")):
+        _git(base, "config", "--local", k, v)
+    _write_files(base, {"README.md": "old readme\n", "gone.txt": "dropped in the next release\n",
+                        "src/a.py": "A = 1\n"})
+    _git(base, "add", "-A")
+    _git(base, "commit", "-q", "--no-verify", "-m", "v0.0.1", env=_who(REL_NAME, email))
+    _git(base, "tag", "-a", "v0.0.1", "-m", "v0.0.1", env=_who(REL_NAME, email))
+    return base, _out(base, "rev-parse", "HEAD").strip()
+
+
+def _template(tmp_path: Path) -> Path:
+    t = tmp_path / "empty-template"
+    t.mkdir()
+    return t
+
+
+def _tree(repo: Path) -> list[str]:
+    return sorted(p for p in _out(repo, "ls-tree", "-r", "-z", "--name-only", "HEAD").split("\0") if p)
+
+
+NEW_FILES = {"README.md": "new readme\n", "src/a.py": "A = 2\n", "src/b/c.py": "C = 3\n", ".gitignore": "build/\n"}
+
+
+def test_clear_worktree_keeps_only_git(mr, tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git(repo, "init", "-q", "-b", "main")
+    git_before = sorted(p.relative_to(repo).as_posix() for p in (repo / ".git").rglob("*"))
+    _write_files(repo, {"a.txt": "a\n", ".hidden": "h\n", ".github/workflows/ci.yml": "x\n",
+                        "deep/er/still/f.md": "f\n", "deep/.dot/g": "g\n"})
+    (repo / "emptydir").mkdir()
+    mr.clear_worktree(repo)
+    assert [p.name for p in repo.iterdir()] == [".git"]
+    assert sorted(p.relative_to(repo).as_posix() for p in (repo / ".git").rglob("*")) == git_before
+    mr.clear_worktree(repo)  # idempotent
+    assert [p.name for p in repo.iterdir()] == [".git"]
+
+
+def test_based_release_is_one_commit_on_top_of_published_main(mr, tmp_path):
+    base, base_head = _make_base(tmp_path)
+    template = _template(tmp_path)
+    repo = tmp_path / "work" / "repo"
+    assert mr.start_repo(repo, str(base), template) == base_head
+    assert _out(repo, "rev-parse", "HEAD").strip() == base_head
+    assert _out(repo, "tag", "-l", "v0.0.1").strip() == "v0.0.1"  # tags fetched
+
+    mr.clear_worktree(repo)
+    assert [p.name for p in repo.iterdir()] == [".git"]
+    _write_files(repo, NEW_FILES)
+    written = sorted(NEW_FILES)
+    head = mr.commit_release(repo, written, REL_NAME, REL_EMAIL, "v0.1.1", base_head, STAMP, template)
+
+    assert head == _out(repo, "rev-parse", "HEAD").strip()
+    assert head != base_head
+    assert _out(repo, "rev-list", "--parents", "-n", "1", "HEAD").split()[1:] == [base_head]
+    assert _out(repo, "rev-list", "--count", "HEAD").strip() == "2"
+    assert _tree(repo) == written
+    assert "gone.txt" not in _tree(repo)
+    assert _out(repo, "log", "-1", "--format=%an|%ae|%cn|%ce").strip() == (
+        f"{REL_NAME}|{REL_EMAIL}|{REL_NAME}|{REL_EMAIL}"
+    )
+    assert _out(repo, "log", "-1", "--format=%ad", "--date=format:%Y-%m-%dT%H:%M:%S%z").strip() == STAMP
+    assert _out(repo, "log", "-1", "--format=%cd", "--date=format:%Y-%m-%dT%H:%M:%S%z").strip() == STAMP
+    assert _out(repo, "tag", "-l", "v0.0.1").strip() == "v0.0.1"
+    assert _out(repo, "tag", "-l", "v0.1.1").strip() == ""  # commit_release never creates the tag
+    assert _out(repo, "config", "--local", "user.name").strip() == REL_NAME
+    assert _out(repo, "config", "--local", "user.email").strip() == REL_EMAIL
+
+
+def test_commit_release_refuses_existing_tag(mr, tmp_path):
+    base, base_head = _make_base(tmp_path)
+    template = _template(tmp_path)
+    repo = tmp_path / "repo"
+    mr.start_repo(repo, str(base), template)
+    mr.clear_worktree(repo)
+    _write_files(repo, NEW_FILES)
+    with pytest.raises(mr.ReleaseError):
+        mr.commit_release(repo, sorted(NEW_FILES), REL_NAME, REL_EMAIL, "v0.0.1", base_head, STAMP, template)
+    assert _out(repo, "rev-parse", "HEAD").strip() == base_head  # nothing committed
+
+
+@pytest.mark.parametrize("change", ["missing", "extra"])
+def test_commit_release_refuses_written_mismatch(mr, tmp_path, change):
+    base, base_head = _make_base(tmp_path)
+    template = _template(tmp_path)
+    repo = tmp_path / "repo"
+    mr.start_repo(repo, str(base), template)
+    mr.clear_worktree(repo)
+    _write_files(repo, NEW_FILES)
+    written = sorted(NEW_FILES)
+    written = written[1:] if change == "missing" else sorted([*written, "not/staged.txt"])
+    with pytest.raises(mr.ReleaseError):
+        mr.commit_release(repo, written, REL_NAME, REL_EMAIL, "v0.1.1", base_head, STAMP, template)
+    assert _out(repo, "rev-parse", "HEAD").strip() == base_head
+
+
+def test_commit_release_refuses_base_with_other_identity(mr, tmp_path):
+    base, base_head = _make_base(tmp_path, email="someone-else@example.org")
+    template = _template(tmp_path)
+    repo = tmp_path / "repo"
+    mr.start_repo(repo, str(base), template)
+    mr.clear_worktree(repo)
+    _write_files(repo, NEW_FILES)
+    with pytest.raises(mr.ReleaseError):
+        mr.commit_release(repo, sorted(NEW_FILES), REL_NAME, REL_EMAIL, "v0.1.1", base_head, STAMP, template)
+
+
+def test_fresh_release_is_a_root_commit(mr, tmp_path):
+    template = _template(tmp_path)
+    repo = tmp_path / "work" / "repo"
+    assert mr.start_repo(repo, None, template) is None
+    assert (repo / ".git").is_dir()
+    assert _out(repo, "symbolic-ref", "HEAD").strip() == "refs/heads/main"
+    _write_files(repo, NEW_FILES)
+    head = mr.commit_release(repo, sorted(NEW_FILES), REL_NAME, REL_EMAIL, "v0.1.1", None, STAMP, template)
+    assert head == _out(repo, "rev-parse", "HEAD").strip()
+    assert _out(repo, "rev-list", "--count", "HEAD").strip() == "1"
+    assert _out(repo, "rev-list", "--parents", "-n", "1", "HEAD").split() == [head]
+    assert _tree(repo) == sorted(NEW_FILES)
+    assert _out(repo, "log", "-1", "--format=%ad", "--date=format:%Y-%m-%dT%H:%M:%S%z").strip() == STAMP
+    assert _out(repo, "tag", "-l").strip() == ""
+
+
+def test_start_repo_nonexistent_base_raises(mr, tmp_path):
+    with pytest.raises(mr.ReleaseError):
+        mr.start_repo(tmp_path / "repo", str(tmp_path / "no-such-base"), _template(tmp_path))
+
+
+# ---------- base URL, changelog date, required --base, fast-forward guard ----------
+
+@pytest.mark.parametrize("url", ["https://github.com/org/repo.git", "https://example.com/a/b"])
+def test_check_base_url_accepts_https(mr, url):
+    mr.check_base_url(url)
+
+
+@pytest.mark.parametrize("url", ["", "U:/some/repo", "../repo", "file:///tmp/repo", "http://github.com/o/r",
+                                 "git@github.com:o/r.git", "https://"])
+def test_check_base_url_refuses_local_and_non_https(mr, url):
+    with pytest.raises(mr.ReleaseError):
+        mr.check_base_url(url)
+
+
+def test_changelog_date(mr):
+    text = "# Changelog\n\n## [0.1.1] - 2026-11-17\n\nx\n\n## [0.1.0] - 2026-11-16\n"
+    assert mr.changelog_date(text, "0.1.1") == "2026-11-17"
+    assert mr.changelog_date(text, "0.1.0") == "2026-11-16"
+    assert mr.changelog_date(text, "0.2.0") is None
+
+
+def test_main_requires_base(mr, tmp_path):
+    with pytest.raises(SystemExit):
+        mr.main(["--out", str(tmp_path / "o"), "--author-name", "Rel Ease", "--author-email", "rel@example.com"])
+
+
+def test_commit_release_refuses_non_fast_forward(mr, tmp_path):
+    template = tmp_path / "tpl"
+    template.mkdir()
+    repo = tmp_path / "r"
+    mr.start_repo(repo, None, template)
+    (repo / "a.txt").write_text("a\n", encoding="utf-8")
+    first = mr.commit_release(repo, ["a.txt"], "Rel Ease", "rel@example.com", "v0.0.1", None,
+                              "2026-11-18T09:00:00+0000", template)
+    (repo / "a.txt").write_text("b\n", encoding="utf-8")
+    with pytest.raises(mr.ReleaseError):  # claims a base head that is not the commit's parent
+        mr.commit_release(repo, ["a.txt"], "Rel Ease", "rel@example.com", "v0.0.2", "0" * 40,
+                          "2026-11-18T09:00:00+0000", template)
+    assert first
