@@ -1,0 +1,107 @@
+# Synthetic business glossary for an insurance broking business.
+# Generic terms only. term_ids are referenced by the golden set: never rename one.
+# Some terms are deliberate distractors (used by no table) so matching has wrong answers to avoid.
+version: 1
+terms:
+  # --- Party ---
+  - {term_id: client_identifier, name: Client Identifier, domain: Party, sensitivity: internal, synonyms: [customer id, client id, client number, customer number], definition: Unique internal identifier assigned to a client.}
+  - {term_id: client_full_name, name: Client Full Name, domain: Party, sensitivity: pii, synonyms: [customer name, client name, insured name, full name], definition: Full legal name of an individual client or registered name of a corporate client.}
+  - {term_id: client_first_name, name: Client First Name, domain: Party, sensitivity: pii, synonyms: [forename, given name], definition: First or given name of an individual client.}
+  - {term_id: client_surname, name: Client Surname, domain: Party, sensitivity: pii, synonyms: [last name, family name], definition: Surname or family name of an individual client.}
+  - {term_id: date_of_birth, name: Date of Birth, domain: Party, sensitivity: pii, synonyms: [dob, birth date, birthdate], definition: Date on which an individual client was born.}
+  - {term_id: national_insurance_number, name: National Insurance Number, domain: Party, sensitivity: pii, synonyms: [ni number, nino, ni no], definition: UK National Insurance number of an individual.}
+  - {term_id: social_security_number, name: Social Security Number, domain: Party, sensitivity: pii, synonyms: [ssn, us tax id], definition: US Social Security number of an individual.}
+  - {term_id: tax_file_number, name: Tax File Number, domain: Party, sensitivity: pii, synonyms: [tfn], definition: Australian Tax File Number of an individual.}
+  - {term_id: passport_number, name: Passport Number, domain: Party, sensitivity: pii, synonyms: [passport no], definition: Passport number of an individual.}
+  - {term_id: driving_licence_number, name: Driving Licence Number, domain: Party, sensitivity: pii, synonyms: [licence number, driver license], definition: Driving licence number of an individual.}
+  - {term_id: email_address, name: Email Address, domain: Party, sensitivity: pii, synonyms: [email, e-mail, email addr], definition: Primary email address of a client.}
+  - {term_id: phone_number, name: Phone Number, domain: Party, sensitivity: pii, synonyms: [telephone, phone, mobile, contact number], definition: Primary telephone number of a client.}
+  - {term_id: postal_address, name: Postal Address, domain: Party, sensitivity: pii, synonyms: [address, street address, address line], definition: Street address of a client.}
+  - {term_id: postcode, name: Postcode, domain: Party, sensitivity: pii, synonyms: [post code, zip, zip code, postal code], definition: Postal code of a client address.}
+  - {term_id: gender, name: Gender, domain: Party, sensitivity: pii, synonyms: [sex], definition: Gender of an individual client as recorded.}
+  - {term_id: nationality, name: Nationality, domain: Party, sensitivity: pii, synonyms: [citizenship], definition: Nationality of an individual client.}
+  - {term_id: occupation, name: Occupation, domain: Party, sensitivity: pii, synonyms: [job title, profession], definition: Occupation of an individual client.}
+  - {term_id: client_type, name: Client Type, domain: Party, sensitivity: internal, synonyms: [customer type, party type], definition: Whether the client is an individual or a corporate entity.}
+  - {term_id: client_segment, name: Client Segment, domain: Party, sensitivity: internal, synonyms: [customer segment, tier], definition: Commercial segment the client is managed in.}
+  - {term_id: client_since_date, name: Client Since Date, domain: Party, sensitivity: internal, synonyms: [customer since, relationship start date], definition: Date the client relationship began.}
+  - {term_id: marketing_consent_flag, name: Marketing Consent Flag, domain: Party, sensitivity: internal, synonyms: [marketing opt in, consent], definition: Whether the client consents to marketing contact.}
+  - {term_id: vulnerable_customer_flag, name: Vulnerable Customer Flag, domain: Party, sensitivity: pii, synonyms: [vulnerability indicator, vulnerable], definition: Whether the client has been identified as a vulnerable customer.}
+  - {term_id: company_registration_number, name: Company Registration Number, domain: Party, sensitivity: public, synonyms: [crn, company number], definition: Registered company number of a corporate client.}
+  - {term_id: annual_revenue, name: Annual Revenue, domain: Party, sensitivity: confidential, synonyms: [turnover, annual turnover, revenue], definition: Annual revenue of a corporate client.}
+  - {term_id: employee_count, name: Employee Count, domain: Party, sensitivity: internal, synonyms: [headcount, number of employees], definition: Number of employees of a corporate client.}
+  - {term_id: industry_sector_code, name: Industry Sector Code, domain: Party, sensitivity: public, synonyms: [sic code, naics, industry code], definition: Standard industry classification code of a corporate client.}
+  # --- Policy ---
+  - {term_id: policy_reference, name: Policy Reference, domain: Policy, sensitivity: internal, synonyms: [policy number, policy ref, policy no, policy id], definition: Unique reference of an insurance policy.}
+  - {term_id: policy_line_of_business, name: Line of Business, domain: Policy, sensitivity: internal, synonyms: [lob, class of business, product line], definition: Class of insurance business the policy belongs to.}
+  - {term_id: policy_inception_date, name: Policy Inception Date, domain: Policy, sensitivity: internal, synonyms: [start date, inception, effective date], definition: Date cover under the policy starts.}
+  - {term_id: policy_expiry_date, name: Policy Expiry Date, domain: Policy, sensitivity: internal, synonyms: [end date, expiry, expiration date], definition: Date cover under the policy ends.}
+  - {term_id: gross_written_premium, name: Gross Written Premium, domain: Policy, sensitivity: confidential, synonyms: [gwp, gross premium], definition: Total premium written before deductions.}
+  - {term_id: net_written_premium, name: Net Written Premium, domain: Policy, sensitivity: confidential, synonyms: [nwp, net premium], definition: Premium written after reinsurance and brokerage deductions.}
+  - {term_id: policy_status, name: Policy Status, domain: Policy, sensitivity: internal, synonyms: [policy state], definition: Current lifecycle status of the policy.}
+  - {term_id: policy_currency, name: Policy Currency, domain: Policy, sensitivity: public, synonyms: [policy ccy, settlement currency], definition: Currency in which the policy premium is denominated.}
+  - {term_id: sum_insured, name: Sum Insured, domain: Policy, sensitivity: confidential, synonyms: [insured value, limit of indemnity, tsi], definition: Maximum amount payable under the policy.}
+  - {term_id: deductible_amount, name: Deductible Amount, domain: Policy, sensitivity: confidential, synonyms: [excess, deductible, xs, excess amount], definition: Amount the insured bears before the insurer pays.}
+  - {term_id: policy_renewal_flag, name: Renewal Flag, domain: Policy, sensitivity: internal, synonyms: [renewal indicator, is renewal], definition: Whether the policy is a renewal of a prior policy.}
+  - {term_id: policy_version_number, name: Policy Version Number, domain: Policy, sensitivity: internal, synonyms: [endorsement number, version], definition: Version of the policy after endorsements.}
+  - {term_id: policy_term_months, name: Policy Term Months, domain: Policy, sensitivity: internal, synonyms: [term, duration], definition: Length of the policy period in months.}
+  - {term_id: coverage_territory, name: Coverage Territory, domain: Policy, sensitivity: internal, synonyms: [territory, territorial limits, geographic scope], definition: Geographic area within which cover applies.}
+  - {term_id: commission_rate, name: Commission Rate, domain: Policy, sensitivity: confidential, synonyms: [brokerage rate, commission percent, comm pct], definition: Percentage of premium paid to the broker as commission.}
+  - {term_id: brokerage_amount, name: Brokerage Amount, domain: Policy, sensitivity: confidential, synonyms: [commission amount, brokerage], definition: Commission amount earned by the broker.}
+  - {term_id: insurer_name, name: Insurer Name, domain: Policy, sensitivity: public, synonyms: [carrier, market, underwriter company], definition: Name of the insurance carrier on risk.}
+  - {term_id: placement_type, name: Placement Type, domain: Policy, sensitivity: internal, synonyms: [placement method, open market, facility], definition: How the risk was placed with insurers.}
+  - {term_id: binding_authority_reference, name: Binding Authority Reference, domain: Policy, sensitivity: internal, synonyms: [binder ref, delegated authority ref], definition: Reference of the binding authority agreement used.}
+  - {term_id: underwriter_identifier, name: Underwriter Identifier, domain: Underwriting, sensitivity: internal, synonyms: [underwriter id, uw id], definition: Unique identifier of the underwriter responsible.}
+  # --- Quotes ---
+  - {term_id: quote_reference, name: Quote Reference, domain: Policy, sensitivity: internal, synonyms: [quote number, quote id], definition: Unique reference of a quotation.}
+  - {term_id: quote_date, name: Quote Date, domain: Policy, sensitivity: internal, synonyms: [quotation date], definition: Date the quotation was issued.}
+  - {term_id: quote_status, name: Quote Status, domain: Policy, sensitivity: internal, synonyms: [quotation status], definition: Lifecycle status of a quotation.}
+  - {term_id: quoted_premium, name: Quoted Premium, domain: Policy, sensitivity: confidential, synonyms: [quote premium, offered premium], definition: Premium offered in a quotation.}
+  - {term_id: conversion_flag, name: Conversion Flag, domain: Policy, sensitivity: internal, synonyms: [converted, bound flag, quote converted], definition: Whether the quotation converted to a bound policy.}
+  # --- Claims ---
+  - {term_id: claim_identifier, name: Claim Identifier, domain: Claims, sensitivity: internal, synonyms: [claim id, claim number, claim ref], definition: Unique identifier of a claim.}
+  - {term_id: date_of_loss, name: Date of Loss, domain: Claims, sensitivity: internal, synonyms: [loss date, incident date], definition: Date on which the loss occurred.}
+  - {term_id: claim_notification_date, name: Claim Notification Date, domain: Claims, sensitivity: internal, synonyms: [notified date, reported date, fnol date], definition: Date the claim was first notified.}
+  - {term_id: claim_amount, name: Claim Amount, domain: Claims, sensitivity: confidential, synonyms: [incurred amount, claimed amount, incurred], definition: Total amount claimed or incurred on the claim.}
+  - {term_id: claim_reserve_amount, name: Claim Reserve Amount, domain: Claims, sensitivity: confidential, synonyms: [reserve, outstanding reserve, case reserve], definition: Amount reserved for future payments on the claim.}
+  - {term_id: claim_paid_amount, name: Claim Paid Amount, domain: Claims, sensitivity: confidential, synonyms: [paid to date, paid amount], definition: Amount paid on the claim to date.}
+  - {term_id: claim_status, name: Claim Status, domain: Claims, sensitivity: internal, synonyms: [claim state], definition: Current status of the claim.}
+  - {term_id: cause_of_loss, name: Cause of Loss, domain: Claims, sensitivity: internal, synonyms: [peril, loss cause, col], definition: Peril or cause that gave rise to the loss.}
+  - {term_id: claim_handler_identifier, name: Claim Handler Identifier, domain: Claims, sensitivity: internal, synonyms: [handler id, adjuster id], definition: Identifier of the person handling the claim.}
+  - {term_id: claim_description, name: Claim Description, domain: Claims, sensitivity: pii, synonyms: [claim notes, loss description, narrative], definition: Free-text description of the claim. May contain personal data.}
+  - {term_id: loss_location, name: Loss Location, domain: Claims, sensitivity: confidential, synonyms: [location of loss, incident location], definition: Where the loss occurred.}
+  - {term_id: litigation_flag, name: Litigation Flag, domain: Claims, sensitivity: confidential, synonyms: [litigated, in litigation, legal indicator], definition: Whether the claim is subject to litigation.}
+  - {term_id: fraud_indicator, name: Fraud Indicator, domain: Claims, sensitivity: confidential, synonyms: [fraud flag, suspected fraud, siu referral], definition: Whether the claim is flagged for suspected fraud.}
+  - {term_id: subrogation_amount, name: Subrogation Amount, domain: Claims, sensitivity: confidential, synonyms: [recovery amount, recoveries], definition: Amount recovered from third parties on the claim.}
+  - {term_id: claim_settlement_date, name: Claim Settlement Date, domain: Claims, sensitivity: internal, synonyms: [settled date, closed date], definition: Date the claim was settled.}
+  - {term_id: catastrophe_code, name: Catastrophe Code, domain: Claims, sensitivity: public, synonyms: [cat code, event code], definition: Code of the catastrophe event the loss is attributed to.}
+  # --- Distribution ---
+  - {term_id: broker_code, name: Broker Code, domain: Distribution, sensitivity: internal, synonyms: [broker id, producer code, agent code], definition: Unique code of a placing or producing broker.}
+  - {term_id: broker_name, name: Broker Name, domain: Distribution, sensitivity: public, synonyms: [producer name, intermediary name], definition: Trading name of a broker firm.}
+  - {term_id: fca_firm_reference, name: FCA Firm Reference, domain: Distribution, sensitivity: public, synonyms: [frn, firm reference number], definition: Regulator firm reference number of a broker.}
+  - {term_id: broker_contact_email, name: Broker Contact Email, domain: Distribution, sensitivity: pii, synonyms: [broker email, producer email], definition: Email address of the named contact at a broker firm.}
+  - {term_id: broker_tier, name: Broker Tier, domain: Distribution, sensitivity: internal, synonyms: [producer tier, broker segment], definition: Commercial tier assigned to a broker.}
+  - {term_id: broker_onboarding_date, name: Broker Onboarding Date, domain: Distribution, sensitivity: internal, synonyms: [broker since, appointed date], definition: Date the broker was onboarded.}
+  # --- Finance ---
+  - {term_id: payment_identifier, name: Payment Identifier, domain: Finance, sensitivity: internal, synonyms: [payment id, transaction id], definition: Unique identifier of a payment transaction.}
+  - {term_id: payment_amount, name: Payment Amount, domain: Finance, sensitivity: confidential, synonyms: [amount paid, transaction amount], definition: Amount of a payment transaction.}
+  - {term_id: payment_date, name: Payment Date, domain: Finance, sensitivity: internal, synonyms: [transaction date, paid date], definition: Date a payment was made.}
+  - {term_id: payment_method, name: Payment Method, domain: Finance, sensitivity: internal, synonyms: [payment type, pay method], definition: Method used to make a payment.}
+  - {term_id: payment_status, name: Payment Status, domain: Finance, sensitivity: internal, synonyms: [transaction status], definition: Status of a payment transaction.}
+  - {term_id: sort_code, name: Sort Code, domain: Finance, sensitivity: pii, synonyms: [bank sort code, routing code], definition: UK bank sort code of the paying account.}
+  - {term_id: bank_account_last_four, name: Bank Account Last Four, domain: Finance, sensitivity: confidential, synonyms: [account last 4, acct last4, masked account], definition: Last four digits of the paying bank account.}
+  - {term_id: iban, name: IBAN, domain: Finance, sensitivity: pii, synonyms: [international bank account number], definition: International bank account number of the paying account.}
+  - {term_id: invoice_number, name: Invoice Number, domain: Finance, sensitivity: internal, synonyms: [invoice ref, debit note number], definition: Reference of the invoice or debit note.}
+  - {term_id: currency_code, name: Currency Code, domain: Finance, sensitivity: public, synonyms: [ccy, currency, iso currency], definition: ISO 4217 currency code of a monetary amount.}
+  - {term_id: exchange_rate, name: Exchange Rate, domain: Finance, sensitivity: internal, synonyms: [fx rate, conversion rate], definition: Rate used to convert an amount to the reporting currency.}
+  # --- Underwriting ---
+  - {term_id: underwriter_name, name: Underwriter Name, domain: Underwriting, sensitivity: pii, synonyms: [uw name], definition: Name of an individual underwriter.}
+  - {term_id: underwriting_authority_limit, name: Underwriting Authority Limit, domain: Underwriting, sensitivity: confidential, synonyms: [authority limit, line size limit], definition: Maximum line an underwriter may bind without referral.}
+  - {term_id: underwriting_team, name: Underwriting Team, domain: Underwriting, sensitivity: internal, synonyms: [uw team, desk], definition: Underwriting team or desk an underwriter belongs to.}
+  - {term_id: risk_score, name: Risk Score, domain: Underwriting, sensitivity: confidential, synonyms: [risk rating, technical score], definition: Model or underwriter-assigned score of risk quality.}
+  - {term_id: referral_flag, name: Referral Flag, domain: Underwriting, sensitivity: internal, synonyms: [referred, referral indicator], definition: Whether the risk was referred above the underwriter's authority.}
+  # --- Reference and operational ---
+  - {term_id: region_code, name: Region Code, domain: Reference, sensitivity: internal, synonyms: [region, rgn, operating region], definition: Operating region the record belongs to (e.g. UK, US, AU).}
+  - {term_id: country_code, name: Country Code, domain: Reference, sensitivity: public, synonyms: [country, iso country], definition: ISO 3166 country code.}
+  - {term_id: record_created_timestamp, name: Record Created Timestamp, domain: Operational, sensitivity: internal, synonyms: [created at, create ts, rec crt ts], definition: Timestamp the record was created in the source system.}
+  - {term_id: record_updated_timestamp, name: Record Updated Timestamp, domain: Operational, sensitivity: internal, synonyms: [updated at, last updated, modified at], definition: Timestamp the record was last updated in the source system.}
+  - {term_id: source_system_code, name: Source System Code, domain: Operational, sensitivity: internal, synonyms: [source system, src sys, origin system], definition: Code of the system the record originated in.}

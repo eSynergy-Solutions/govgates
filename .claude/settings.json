@@ -1,0 +1,72 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(ruff:*)",
+      "Bash(python -m synthetic.generate_data:*)",
+      "Bash(pip install -e:*)",
+      "Bash(databricks bundle validate:*)",
+      "Bash(databricks bundle deploy -t dev:*)",
+      "Bash(databricks bundle run -t dev:*)",
+      "Bash(databricks bundle summary:*)",
+      "Bash(databricks current-user me:*)",
+      "Bash(databricks catalogs list:*)",
+      "Bash(databricks schemas list:*)",
+      "Bash(databricks tables list:*)",
+      "Bash(databricks tables get:*)",
+      "Bash(databricks jobs list-runs:*)",
+      "Bash(databricks jobs get-run:*)",
+      "Bash(databricks jobs get-run-output:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git worktree:*)",
+      "Bash(./scripts/check_client_names.sh)",
+      "WebFetch(domain:docs.databricks.com)",
+      "WebFetch(domain:learn.microsoft.com)",
+      "WebFetch(domain:github.com)",
+      "Bash(./scripts/sql.sh:*)",
+      "Bash(./scripts/release_scan.sh)"
+    ],
+    "ask": [
+      "Bash(git push:*)"
+    ],
+    "deny": [
+      "Read(./.release-denylist)",
+      "Bash(databricks bundle destroy:*)",
+      "Bash(databricks bundle deploy -t demo:*)",
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Bash(git reset --hard:*)",
+      "Read(./.client-denylist)",
+      "Read(./.env)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{ "type": "command", "command": "PY=\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\"; [ -x \"$PY\" ] || PY=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; \"$PY\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_bash.py\"" }]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [{ "type": "command", "command": "PY=\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\"; [ -x \"$PY\" ] || PY=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; \"$PY\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard_edit.py\"" }]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [{ "type": "command", "command": "PY=\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\"; [ -x \"$PY\" ] || PY=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; \"$PY\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_python.py\" lint" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "PY=\"$CLAUDE_PROJECT_DIR/.venv/Scripts/python.exe\"; [ -x \"$PY\" ] || PY=\"$CLAUDE_PROJECT_DIR/.venv/bin/python\"; \"$PY\" \"$CLAUDE_PROJECT_DIR/.claude/hooks/check_python.py\" tests", "timeout": 300 }]
+      }
+    ]
+  }
+}

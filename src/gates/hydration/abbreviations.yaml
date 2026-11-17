@@ -1,0 +1,221 @@
+# Column-name abbreviation dictionary used before fuzzy matching (specs/hydration.md step 3).
+#
+# Written from general insurance and data-naming conventions, NOT from the synthetic table specs or the
+# golden set, so the eval measures the matcher rather than this file.
+#
+# Rules:
+#   - Keys are single lower-case tokens as produced by the tokenizer (snake_case, camelCase and digits
+#     are split, so "PolRefNo" -> pol, ref, no).
+#   - Values are plain lower-case words: a string, or a list when the token has several readings.
+#   - A list makes the token ambiguous: the matcher scores every reading and keeps the best, but a column
+#     containing an ambiguous token never auto-accepts on fuzzy. It goes to the LLM with all readings
+#     shown in expanded_name, e.g. "policy (expiry/exposure/expense) date".
+#   - Very ambiguous tokens are left out entirely (listed at the bottom).
+#   - The matcher scores both the raw and the expanded name, so an expansion can only add matches.
+version: 1
+abbreviations:
+  # --- identifiers and numbering ---
+  id: identifier
+  ident: identifier
+  ref: reference
+  refno: reference number
+  no: number
+  num: number
+  nbr: number
+  nr: number
+  cd: code
+  ver: version
+  vsn: version
+  seq: sequence
+
+  # --- generic data words ---
+  amt: amount
+  val: value
+  qty: quantity
+  cnt: count
+  pct: percent
+  perc: percent
+  desc: description
+  dsc: description
+  nm: name
+  nme: name
+  typ: type
+  stat: status
+  sts: status
+  stts: status
+  flg: flag
+  ind: indicator
+  src: source
+  sys: system
+  tot: total
+  avg: average
+  max: maximum
+  min: minimum
+  xs: excess
+  hdlr: handler
+  mthd: method
+  addr: address
+
+  # --- dates and times ---
+  dt: date
+  dte: date
+  dat: date
+  ts: timestamp
+  tstmp: timestamp
+  tm: time
+  yr: year
+  mth: month
+  mnth: month
+  qtr: quarter
+  crt: created
+  cre: created
+  upd: updated
+  mod: modified
+  eff: effective
+  exp: [expiry, exposure, expense]
+  expy: expiry
+  incp: inception
+  incep: inception
+  strt: start
+
+  # --- party ---
+  cust: customer
+  cus: customer
+  clnt: client
+  cli: client
+  fname: first name
+  fnm: first name
+  frst: first
+  lname: last name
+  lnm: last name
+  snm: surname
+  sname: surname
+  dob: date of birth
+  gndr: gender
+  occ: occupation
+  occup: occupation
+  natl: nationality
+  nino: national insurance number
+  ni: national insurance
+  ssn: social security number
+  tfn: tax file number
+  lic: licence
+  lcnc: licence
+  addr: address
+  adr: address
+  ln: line
+  pcode: postcode
+  postcd: postcode
+  zip: postcode
+  cntry: country
+  ctry: country
+  rgn: region
+  tel: telephone
+  phn: phone
+  ph: [phone, policyholder]
+  mob: mobile
+  eml: email
+  mktg: marketing
+  cnsnt: consent
+  vuln: vulnerable
+  seg: segment
+  emp: employee
+  co: [company, cover, contact]
+  regn: registration
+  rev: [reversal, revenue, review]
+  sic: industry code
+
+  # --- policy and placement ---
+  pol: policy
+  plcy: policy
+  prem: premium
+  gwp: gross written premium
+  nwp: net written premium
+  lob: line of business
+  cob: class of business
+  ccy: currency
+  cur: currency
+  curr: currency
+  si: sum insured
+  tsi: total sum insured
+  ded: deductible
+  xs: excess
+  ren: renewal
+  rnwl: renewal
+  terr: territory
+  comm: commission
+  brkg: brokerage
+  brk: broker
+  insr: insurer
+  insd: insured
+  uw: underwriter
+  uwr: underwriter
+  mkt: market
+  plcmt: placement
+  bndr: binder
+  ba: [binding authority, bank account]
+  bdx: bordereau
+  endt: endorsement
+  endo: endorsement
+  dur: duration
+  qt: quote
+  qte: quote
+  conv: conversion
+
+  # --- claims ---
+  clm: claim
+  clms: claims
+  rsv: reserve
+  rsrv: reserve
+  os: outstanding
+  outst: outstanding
+  pd: paid
+  incd: incurred
+  incrd: incurred
+  notif: notification
+  notf: notification
+  rptd: reported
+  rpt: reported
+  hndlr: handler
+  adj: adjuster
+  subro: subrogation
+  frd: fraud
+  lit: litigation
+  sttl: settlement
+  stlmt: settlement
+
+  # --- finance ---
+  pmt: payment
+  pymt: payment
+  acct: account
+  bal: balance
+  inv: invoice
+  txn: transaction
+  trx: transaction
+  srt: sort
+  iban: international bank account number
+
+# Deliberately NOT expanded (ambiguous in insurance data):
+#   pc   postcode | percent | personal computer
+#   tp   third party | type
+#   acc  account | accident
+#   inc  incurred | income | incident | incorporated
+#   res  reserve | result | residential
+#   rec  recovery | record | received
+#   cat  catastrophe | category
+#   reg  registration | region | regulatory
+#   st   street | state | status
+#   cty  city | county
+#   ins  insurer | insured | insurance
+#   dl   driving licence | download
+#   nat  nationality | natural
+
+ignore_tokens:
+  currencies: [gbp, aud, usd, eur]
+  strip_trailing_digits: true
+
+# A column whose every token is one of these (or a bare number) is NO_MATCH in code, before fuzzy and the LLM,
+# unless a value pattern covers >= 80% of its values. Split on _, case changes and digits.
+noise_tokens: [tmp, temp, test, unused, col, field, filler, legacy, ref, user, def, udf, misc, attr, x]
+# Noise only next to another noise word: a name made only of these (ref, user, user_ref, ref_1) is not noise.
+weak_noise_tokens: [ref, user]

@@ -1,0 +1,113 @@
+bundle:
+  name: govgates-accelerator
+
+include:
+  - resources/*.yml
+
+variables:
+  catalog:
+    description: Catalog the gates build in. Never a client name.
+    default: gate_sandbox
+  raw_schema:
+    default: raw
+  gov_schema:
+    default: gov
+  ref_schema:
+    default: ref
+  curated_schema:
+    default: curated
+  tag_prefix:
+    description: Prefix for the account-wide governed tag keys (<prefix>_sensitivity, <prefix>_rls_attribute). Never a client name.
+    default: gg
+  permitted_use_codes:
+    description: Comma-separated controlled list of use codes an owner may set as a permitted use (synthetic stub until the client list)
+    default: reporting,ml_training,external_share
+  rls_term_id:
+    description: Business term whose approved columns the row-filter generator tags <tag_prefix>_rls_attribute = region
+    default: region_code
+  owner_exception:
+    description: The one person allowed to modify ref.user_attributes besides the CI SP (the catalog owner). No default - pass it at deploy (--var); left empty, the check fails because the owner is unexpected.
+    default: ""
+  grant_schemas:
+    description: Comma-separated schemas the grants generator manages (drift revokes SELECT / USE SCHEMA there with no live agreement behind it)
+    default: raw
+  access_model_source:
+    description: Where the access-model adapter reads the external access model. file (YAML stub) or api (not built). Bundle-level only, never a job parameter.
+    default: file
+  access_model_path:
+    description: The access-model YAML the adapter reads (file source). Deploy-time only, never a job parameter, so a runner can't point the adapter at their own model.
+    default: ${workspace.file_path}/config/access_model.example.yaml
+  no_permitted_uses_outcome:
+    description: What a request for a product with no permitted uses gets (Decision 1). deny or owner. Bundle-level only, never a job parameter.
+    default: deny
+  seed:
+    description: Random seed for synthetic data
+    default: "42"
+  scale:
+    description: Row-count multiplier for synthetic data (1 = demo size)
+    default: "1"
+  fuzzy_accept:
+    description: token_set_ratio score at or above which a unique top match is proposed without the LLM
+    default: "90"
+  llm_provider:
+    description: ai_query (Databricks serving endpoint) or openai (OpenAI-compatible base URL)
+    default: ai_query
+  llm_endpoint:
+    description: Serving endpoint name for the ai_query provider
+    default: databricks-gpt-oss-120b
+  llm_base_url:
+    description: Base URL for the openai provider (empty for ai_query)
+    default: ""
+  llm_model:
+    description: Model name for the openai provider (empty for ai_query)
+    default: ""
+  llm_secret_scope:
+    description: Secret scope holding the openai provider API key
+    default: ""
+  llm_secret_key:
+    description: Secret key name for the openai provider API key
+    default: ""
+  llm_max_columns_per_call:
+    description: Unresolved columns per LLM call in hydration (Q4); wider tables are split into near-equal chunks
+    default: 40
+  prompt_version:
+    description: Default proposer prompt (src/gates/hydration/prompts/<version>.md); override per run with --params
+    default: propose_v3
+  mlflow_experiment:
+    description: Workspace path of the MLflow experiment the hydration eval logs to
+    default: ${workspace.root_path}/hydration-eval
+  notify_on_failure:
+    description: Who gets an email when the approve job fails (a failed apply leaves the product not ready and its
+      grants revoked on the next consumption_apply). A list, set per target; empty on dev. Never a literal address
+      in this repo.
+    type: complex
+    default: []
+  ci_sp:
+    description: Application ID of the CI service principal. The approve job runs as it, so a person's
+      decision in gov.review_decisions is never committed by the job's own principal. No default - set it per
+      target in .databricks/bundle/<target>/variable-overrides.json (gitignored) or with BUNDLE_VAR_ci_sp.
+
+# The approve job runs as the CI service principal; it needs to read the bundle's files (and may view its jobs).
+permissions:
+  - level: CAN_VIEW
+    service_principal_name: ${var.ci_sp}
+
+# No workspace host here: auth fields can't use ${var.*}, and the repo must not name our workspace.
+# The CLI takes the host from --profile <name> or DATABRICKS_HOST (CI sets it from a secret).
+targets:
+  dev:
+    mode: development
+    default: true
+
+  # Example of a shared test environment. Copy, uncomment and fill in. Set ci_sp, owner_exception and
+  # notify_on_failure (every non-dev target must) in .databricks/bundle/uat/variable-overrides.json
+  # (gitignored; BUNDLE_VAR_* works for the simple ones, not the notify_on_failure list), never as literals here.
+  # uat:
+  #   mode: production
+  #   workspace:
+  #     root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+  #   variables:
+  #     catalog: <uat catalog>
+  #     tag_prefix: <your governed tag prefix>
+  #   run_as:
+  #     service_principal_name: ${var.ci_sp}

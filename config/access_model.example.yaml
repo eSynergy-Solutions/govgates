@@ -1,0 +1,49 @@
+# Synthetic stand-in for the external authorisation service's access model (specs/consumption.md,
+# "Agreements and the access model"). Read by the access-model adapter (task access_model_sync of job consumption_apply), which projects it
+# into gov.access_policies (mask EXCEPT lists, row_filter rows) and ref.user_attributes.
+#
+# It says WHAT a principal may see within an agreement, never WHETHER: grants come only from consumption agreements.
+# Groups stand in for identity-provider groups. Members are persona service-principal display names; the adapter
+# only reports membership drift, it never changes membership.
+#
+# Keys under `schemas` are schema names (resolved in the configured catalog), never catalog.schema or tables:
+# masks are schema-level, so PII entitlement is per schema. Which schemas carry a mask / row filter at all comes
+# from config (grant_schemas), not from this file; this file only decides who is excepted.
+#
+# This file decides who sees PII. Change it only through review.
+
+version: 1
+masked_classes: [pii]
+
+groups:
+  gs_analyst_uk:
+    members: [analyst_sp]
+    regions: [UK]
+    line_of_business: null
+    schemas: {}
+  gs_analyst_global:
+    members: [analyst_global_sp]
+    regions: ALL
+    line_of_business: null
+    schemas: {}
+  gs_claims_handler:
+    members: [claims_handler_sp]
+    regions: [UK]
+    line_of_business: null
+    schemas:
+      raw: {unmasked: [pii]}
+  gs_data_owner:
+    members: [data_owner_sp]
+    regions: ALL
+    line_of_business: null
+    schemas:
+      raw: {unmasked: [pii]}
+  gs_no_access:
+    members: [no_access_sp]
+    regions: NONE
+    line_of_business: null
+    schemas: {}
+
+# Principals that must belong to no group in the model (C-AC3: the proxied user proves nothing if it inherits
+# a group's access). The membership report fails if any of them is found in a group.
+isolated_members: [proxied_analyst_sp]

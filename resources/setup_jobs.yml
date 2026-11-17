@@ -1,0 +1,65 @@
+resources:
+  jobs:
+    setup_gov:
+      name: govgates-setup-gov
+      description: Create schemas and gov tables (idempotent)
+      tasks:
+        - task_key: run_ddl
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/run_ddl.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --ddl-dir
+              - ${workspace.file_path}/sql/ddl
+              - --views-dir
+              - ${workspace.file_path}/sql/views
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+
+    load_synthetic:
+      name: govgates-load-synthetic
+      description: Generate synthetic raw tables, load glossary and golden set (overwrites raw, upserts gov reference data)
+      # the loader principal is the CI SP: it is one of the two principals allowed to modify ref.user_attributes
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      tasks:
+        - task_key: load
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/load_synthetic.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --seed
+              - ${var.seed}
+              - --scale
+              - ${var.scale}
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - faker
+              - pyyaml

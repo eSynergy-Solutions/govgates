@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+build/
+dist/
+.databricks/
+.env
+.client-denylist
+mlruns/
+.vscode/
+.release-denylist
+.release-rewrites

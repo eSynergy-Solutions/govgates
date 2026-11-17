@@ -1,0 +1,24 @@
+# TEMPLATE column-name abbreviation dictionary (specs/hydration.md step 3).
+# Copy to src/gates/hydration/abbreviations.yaml (replacing the synthetic exemplar) and fill in.
+#
+# Write it from your own naming conventions, NOT from your golden set, so the eval measures the matcher
+# rather than this file.
+#
+# Rules:
+#   - Keys are single lower-case tokens as produced by the tokenizer (snake_case, camelCase and digits
+#     are split, so "PolRefNo" -> pol, ref, no).
+#   - Values are plain lower-case words: a string, or a list when the token has several readings.
+#   - A list makes the token ambiguous: the matcher scores every reading and keeps the best, but a column
+#     containing an ambiguous token never auto-accepts on fuzzy. It goes to the LLM with all readings shown.
+#   - Leave out tokens that are too ambiguous to expand.
+#   - The matcher scores both the raw and the expanded name, so an expansion can only add matches.
+version: 1
+abbreviations:
+  # --- identifiers and numbering (generic; keep or adjust) ---
+  id: identifier
+  ref: reference
+  no: number
+  cd: code
+  # --- your domain ---
+  # <<FILL: token>>: <<FILL: expansion>>
+  # <<FILL: ambiguous token>>: [<<FILL: reading 1>>, <<FILL: reading 2>>]

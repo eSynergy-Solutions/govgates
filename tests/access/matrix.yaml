@@ -1,0 +1,113 @@
+# Persona access matrix: the answers the consumption gate is graded against.
+# Human-written and protected (CLAUDE.md, guard_edit.py). Agents read it; they never change it.
+#
+# Read as: persona x table.column -> visible | masked | denied, plus expected rows per region.
+#   visible  query succeeds and values are clear
+#   masked   query succeeds and every non-null value equals mask_literal
+#   denied   query fails with a permission error (no SELECT); no row counts apply
+#
+# Where the expectations come from (8 Nov):
+#   - specs/consumption.md: grants come only from active agreements, on the agreed product, nothing wider.
+#     Masks are schema-level, matched on gg_sensitivity = pii. Row filter matched on gg_rls_attribute = region.
+#   - Sensitivity per column: the golden set (src/synthetic/fields.py + glossary.yaml). Only pii is masked.
+#   - Regions per persona: ref.user_attributes (generate_data.user_attributes).
+#   - Row counts: raw.claims at seed 42, scale 1 = UK 1742, US 488, AU 270 (LOG.md 2026-11-08, live query).
+#   - Only raw.claims.rgn_cd carries gg_rls_attribute (decision 1b). raw.claims is the pilot product: the
+#     only one with permitted uses, so the only one any persona can hold an agreement on.
+#
+# Run state: after Monday's seed requests (`given`) are decided and consumption_apply has run, and after
+# the join-up (`joinup`). Run as each persona's service principal (CLI profile persona-<name>), never as
+# an admin or the CI SP. Table names are schema.table; the harness prefixes the catalog bundle variable.
+
+version: 1
+mask_literal: "***MASKED***"
+regions: [UK, US, AU]
+
+personas:
+  analyst_uk:      {group: gs_analyst_uk,      profile: persona-analyst_uk,      regions: [UK],  pii: masked}
+  analyst_global:  {group: gs_analyst_global,  profile: persona-analyst_global,  regions: ALL,   pii: masked}
+  claims_handler:  {group: gs_claims_handler,  profile: persona-claims_handler,  regions: [UK],  pii: visible}
+  data_owner:      {group: gs_data_owner,      profile: persona-data_owner,      regions: ALL,   pii: visible}
+  no_access:       {group: gs_no_access,       profile: persona-no_access,       regions: NONE,  pii: none}
+  # C-AC3. Proxy mode is stubbed (Decision 2), so its request is denied and it sees nothing.
+  # Must not be a member of any group that holds an agreement, or the test proves nothing.
+  proxied_analyst: {group: null,               profile: persona-proxied_analyst, regions: NONE,  pii: none}
+
+# Preconditions, not executed by the harness. One request per persona against raw.claims,
+# pattern (analytical, batch, <access_mode>). These also cover Monday's three outcomes.
+given:
+  analyst_uk:      {intended_use: reporting,      access_mode: system, outcome: auto_approve}
+  analyst_global:  {intended_use: reporting,      access_mode: system, outcome: auto_approve}
+  data_owner:      {intended_use: reporting,      access_mode: system, outcome: auto_approve}
+  claims_handler:  {intended_use: ml_training,    access_mode: system, outcome: pending_owner, then: approved by data_owner}
+  no_access:       {intended_use: external_share, access_mode: system, outcome: denied, reason_code: use_not_permitted}
+  proxied_analyst: {intended_use: reporting,      access_mode: proxy,  outcome: denied, reason_code: proxy_not_implemented}
+
+tables:
+
+  raw.claims:
+    columns:      # sensitivity per golden set; pii is the only masked class
+      clm_id:     {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+      pol_ref:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+      loss_dt:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+      notif_dt:   {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+      clm_amt:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # confidential
+      rsv_amt:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # confidential
+      paid_amt:   {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # confidential
+      status_cd:  {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+      col_cd:     {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+      hdlr_id:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+      notes_txt:  {analyst_uk: masked,  analyst_global: masked,  claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # pii: planted names and phones
+      loss_loc:   {analyst_uk: masked,  analyst_global: masked,  claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # pii after the join-up (see joinup)
+      lit_ind:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # confidential
+      cat_cd:     {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # public
+      rgn_cd:     {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # row-filter column
+      chk_sum:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # no-match, internal
+      tmp_col:    {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}  # no-match, internal
+    rows:         # count(*) grouped by rgn_cd
+      analyst_uk:      {UK: 1742, US: 0,   AU: 0}
+      analyst_global:  {UK: 1742, US: 488, AU: 270}
+      claims_handler:  {UK: 1742, US: 0,   AU: 0}
+      data_owner:      {UK: 1742, US: 488, AU: 270}
+      no_access:       denied
+      proxied_analyst: denied
+
+  # Control: no permitted uses, so no agreement, so no grant for anyone. Also proves drift control:
+  # gs_analyst_uk held SELECT here before Monday (row-filter slice); the generator must revoke it.
+  raw.policies:
+    columns:
+      pol_ref:    {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      cust_id:    {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      lob:        {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      incept_dt:  {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      exp_dt:     {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      gwp_gbp:    {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      nwp:        {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      pol_status: {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      ccy:        {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      sum_ins:    {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      xs_amt:     {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      uw_id:      {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      brk_cd:     {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      comm_pct:   {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      rgn_cd:     {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      terr:       {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      x_flag:     {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+      rec_crt_ts: {analyst_uk: denied, analyst_global: denied, claims_handler: denied, data_owner: denied, no_access: denied, proxied_analyst: denied}
+    rows:
+      analyst_uk:      denied
+      analyst_global:  denied
+      claims_handler:  denied
+      data_owner:      denied
+      no_access:       denied
+      proxied_analyst: denied
+
+# Join-up (C-AC5, Monday done-when): a column hydration newly approves as pii is masked with no
+# consumption change. loss_loc is a street address and city, golden set says confidential.
+# Action: revise raw.claims.loss_loc to sensitivity pii in gov, run hydration apply only.
+# Do not run consumption_apply or touch gov.access_policies between before and after.
+joinup:
+  column: raw.claims.loss_loc
+  before: {analyst_uk: visible, analyst_global: visible, claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+  after:  {analyst_uk: masked,  analyst_global: masked,  claims_handler: visible, data_owner: visible, no_access: denied, proxied_analyst: denied}
+  consumption_statements_between: 0

@@ -1,0 +1,373 @@
+resources:
+  jobs:
+    check_access_model_membership:
+      name: govgates-check-access-model-membership
+      description: Check the access model's groups against account membership (read-only) and record the result; runs as the deploying person because the CI SP can't read account groups. The access-model adapter needs a passing result less than 26 hours old.
+      max_concurrent_runs: 1
+      # daily, so the adapter's 26h freshness gate holds without a hand run; still re-run it after any YAML edit
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: Europe/London
+        pause_status: UNPAUSED
+      tasks:
+        - task_key: check_membership
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/check_access_model_membership.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --access-model-source
+              - ${var.access_model_source}
+              - --access-model-path
+              - ${var.access_model_path}
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+
+    consumption_apply:
+      name: govgates-consumption-apply
+      description: Consumption generator - row filter, column masks and grants from gov.access_policies and live consumption agreements (idempotent)
+      max_concurrent_runs: 1
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      parameters:
+        - name: grants_plan_only
+          default: "false"
+      tasks:
+        # the generator never runs on an attributes table someone else could have changed
+        - task_key: check_user_attributes
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/check_user_attributes.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --ci-sp
+              - ${var.ci_sp}
+              - --owner-exception
+              - ${var.owner_exception}
+        # the access model sets who is excepted; filter and masks only run on a model that applied cleanly
+        - task_key: access_model_sync
+          depends_on:
+            - task_key: check_user_attributes
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/access_model_sync.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --tag-prefix
+              - ${var.tag_prefix}
+              - --hydration-principal
+              - ${var.ci_sp}
+              - --schemas
+              - ${var.grant_schemas}
+              - --access-model-source
+              - ${var.access_model_source}
+              - --access-model-path
+              - ${var.access_model_path}
+        - task_key: row_filter
+          depends_on:
+            - task_key: access_model_sync
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/consumption_apply.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --tag-prefix
+              - ${var.tag_prefix}
+              - --rls-term-id
+              - ${var.rls_term_id}
+              - --hydration-principal
+              - ${var.ci_sp}
+        # after the row filter: a mask failure never blocks the filter, and masks never run on a failed filter
+        - task_key: masks
+          depends_on:
+            - task_key: row_filter
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/consumption_masks.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --tag-prefix
+              - ${var.tag_prefix}
+              - --rls-term-id
+              - ${var.rls_term_id}
+              - --hydration-principal
+              - ${var.ci_sp}
+        # revokes never wait: they run whatever happened upstream (a failed check, filter or mask never keeps an
+        # expired or revoked agreement's access)
+        - task_key: grants_revoke
+          depends_on:
+            - task_key: masks
+          run_if: ALL_DONE
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/consumption_grants.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --tag-prefix
+              - ${var.tag_prefix}
+              - --hydration-principal
+              - ${var.ci_sp}
+              - --grant-schemas
+              - ${var.grant_schemas}
+              - --owner-exception
+              - ${var.owner_exception}
+              - --plan-only
+              - "{{job.parameters.grants_plan_only}}"
+              - --mode
+              - revoke
+        # grants only on top of a filter and masks that are in place, and after this run's revokes
+        - task_key: grants_set
+          depends_on:
+            - task_key: masks
+            - task_key: grants_revoke
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/consumption_grants.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --tag-prefix
+              - ${var.tag_prefix}
+              - --hydration-principal
+              - ${var.ci_sp}
+              - --grant-schemas
+              - ${var.grant_schemas}
+              - --owner-exception
+              - ${var.owner_exception}
+              - --plan-only
+              - "{{job.parameters.grants_plan_only}}"
+              - --mode
+              - set
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+
+    set_agreement_status:
+      name: govgates-set-agreement-status
+      description: A person revokes one consumption agreement (active -> revoked only), audited with reason and who asked; the next consumption_apply removes the access
+      max_concurrent_runs: 1
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      parameters:
+        - name: agreement_id
+          default: ""
+        - name: reason
+          default: ""
+        - name: triggered_by
+          default: ""
+      tasks:
+        - task_key: set_status
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/set_agreement_status.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --agreement-id
+              - "{{job.parameters.agreement_id}}"
+              - --status
+              - revoked
+              - --reason
+              - "{{job.parameters.reason}}"
+              - --triggered-by
+              - "{{job.parameters.triggered_by}}"
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+
+    check_user_attributes:
+      name: govgates-check-user-attributes
+      description: Detective check - only the CI SP and the configured catalog-owner exception can modify ref.user_attributes (audited on change; fails closed)
+      max_concurrent_runs: 1
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      tasks:
+        - task_key: check_user_attributes
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/check_user_attributes.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --ci-sp
+              - ${var.ci_sp}
+              - --owner-exception
+              - ${var.owner_exception}
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+
+    submit_request:
+      name: govgates-submit-request
+      description: Raise one consumption request (status received), audited; the person raising it is the recorded requester
+      max_concurrent_runs: 1
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      parameters:
+        - name: consumer
+          default: ""
+        - name: product
+          default: ""
+        - name: intended_use
+          default: ""
+        - name: reason
+          default: ""
+        - name: use_mode
+          default: analytical
+        - name: delivery
+          default: batch
+        - name: access_mode
+          default: system
+        - name: requester
+          default: ""
+        - name: request_ref
+          default: ""
+      tasks:
+        - task_key: submit
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/submit_request.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --consumer
+              - "{{job.parameters.consumer}}"
+              - --product
+              - "{{job.parameters.product}}"
+              - --intended-use
+              - "{{job.parameters.intended_use}}"
+              - --reason
+              - "{{job.parameters.reason}}"
+              - --use-mode
+              - "{{job.parameters.use_mode}}"
+              - --delivery
+              - "{{job.parameters.delivery}}"
+              - --access-mode
+              - "{{job.parameters.access_mode}}"
+              - --requester
+              - "{{job.parameters.requester}}"
+              - --request-ref
+              - "{{job.parameters.request_ref}}"
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+
+    consumption_decide:
+      name: govgates-consumption-decide
+      description: Decide every received consumption request - pattern check, use check, evidence, agreement (deterministic, idempotent)
+      max_concurrent_runs: 1
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      parameters:
+        - name: stop_before_agreement
+          default: "false"
+      tasks:
+        - task_key: decide
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/consumption_decide.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --no-permitted-uses-outcome
+              - ${var.no_permitted_uses_outcome}
+              - --stop-before-agreement
+              - "{{job.parameters.stop_before_agreement}}"
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml

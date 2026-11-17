@@ -1,0 +1,12 @@
+# The one lock file for every job environment. Each environment installs it as a constraints file and names only
+# the packages it uses (resources/*.yml: `-c ${workspace.file_path}/requirements/jobs.txt` then bare names), so every
+# version comes from here and no job installs what it doesn't need.
+# databricks-sdk and pyyaml are pinned to the versions serverless environment 2 preinstalls (what dev has always
+# run), so they never reinstall. Exact pins only; each must satisfy pyproject.toml (tests/unit/test_release.py).
+# Direct dependencies only: what these packages pull in (e.g. mlflow's numpy, pydantic, scikit-learn) still floats
+# within their own ranges. Full transitive pinning comes with the wheel build (PLAN.md week one, Q8).
+databricks-sdk==0.40.0
+faker==40.44.0
+mlflow==3.18.0
+pyyaml==6.0
+rapidfuzz==3.14.6

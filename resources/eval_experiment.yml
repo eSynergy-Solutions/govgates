@@ -1,0 +1,9 @@
+resources:
+  experiments:
+    hydration_eval:
+      # The eval job runs as the CI service principal, which only has CAN_VIEW on the bundle folder; the bundle owns
+      # the experiment so the principal can write runs to it without the folder being opened up.
+      name: ${var.mlflow_experiment}
+      permissions:
+        - level: CAN_MANAGE
+          service_principal_name: ${var.ci_sp}

@@ -1,0 +1,63 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:  # manual: Actions > ci > Run workflow, or `gh workflow run ci`
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
+        with:
+          python-version: "3.11"
+      # the job lock as constraints, so unit tests run the same pins as the jobs (CI is Python 3.11: PyYAML 6.0 has a wheel)
+      - run: pip install -c requirements/jobs.txt -e ".[dev]"
+      - run: ruff check src tests
+      - run: pytest tests/unit -q
+
+  deploy-dev:
+    # Manual only (workflow_dispatch) on main, and only when workspace secrets are configured.
+    # Pushes run the test job alone; slices are verified on dev locally, this proves a clean build as the CI principal.
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_CLIENT_ID: ${{ secrets.DATABRICKS_CLIENT_ID }}
+      DATABRICKS_CLIENT_SECRET: ${{ secrets.DATABRICKS_CLIENT_SECRET }}
+      # CI authenticates as the CI principal, so its client id is the application id the bundle's ci_sp needs
+      BUNDLE_VAR_ci_sp: ${{ secrets.DATABRICKS_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+      - name: Skip when no workspace secrets
+        id: gate
+        run: |
+          if [ -z "$DATABRICKS_HOST" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; else echo "skip=false" >> "$GITHUB_OUTPUT"; fi
+      - uses: databricks/setup-cli@2da6132749245fbffb3c10d57cec219de3669967  # v1.26.0
+        if: steps.gate.outputs.skip == 'false'
+        with:
+          version: 1.12.1  # the CLI version slices are verified with locally
+      - run: databricks bundle validate -t dev
+        if: steps.gate.outputs.skip == 'false'
+      - run: databricks bundle deploy -t dev
+        if: steps.gate.outputs.skip == 'false'
+      - name: Create schemas and gov tables
+        run: databricks bundle run -t dev setup_gov
+        if: steps.gate.outputs.skip == 'false'
+      - name: Load synthetic data, glossary and golden set
+        run: databricks bundle run -t dev load_synthetic
+        if: steps.gate.outputs.skip == 'false'
+      - name: Hydrate claims (re-runs on an unchanged table exit at the guard with zero LLM calls)
+        run: databricks bundle run -t dev hydrate --params table=claims
+        if: steps.gate.outputs.skip == 'false'
+      - name: Show what landed
+        if: steps.gate.outputs.skip == 'false'
+        run: |
+          CATALOG=$(databricks bundle validate -t dev -o json | jq -r '.variables.catalog.value')
+          databricks schemas list "$CATALOG" -o json | jq -r '.[].full_name'
+          databricks tables list "$CATALOG" raw -o json | jq -r '.[].full_name'
+          databricks tables list "$CATALOG" gov -o json | jq -r '.[].full_name'

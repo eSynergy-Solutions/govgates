@@ -1,0 +1,204 @@
+resources:
+  jobs:
+    hydrate:
+      name: govgates-hydrate
+      description: Hydration gate for one table - guard, profile, fuzzy match, LLM proposals (idempotent)
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      parameters:
+        - name: table
+          default: claims
+        - name: prompt_version
+          default: ${var.prompt_version}
+        - name: llm_max_columns_per_call
+          default: ${var.llm_max_columns_per_call}
+      tasks:
+        - task_key: hydrate
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/hydrate.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --table
+              - "{{job.parameters.table}}"
+              - --fuzzy-accept
+              - ${var.fuzzy_accept}
+              - --prompt-version
+              - "{{job.parameters.prompt_version}}"
+              - --llm-max-columns-per-call
+              - "{{job.parameters.llm_max_columns_per_call}}"
+              - --llm-provider
+              - ${var.llm_provider}
+              - --llm-endpoint
+              - ${var.llm_endpoint}
+              - --llm-base-url
+              - ${var.llm_base_url}
+              - --llm-model
+              - ${var.llm_model}
+              - --llm-secret-scope
+              - ${var.llm_secret_scope}
+              - --llm-secret-key
+              - ${var.llm_secret_key}
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+              - rapidfuzz
+              - databricks-sdk
+
+    eval_hydration:
+      name: govgates-eval-hydration
+      description: Eval run - hydrate every golden-set table in force mode under one run_id, then score it (specs/eval.md)
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      parameters:
+        - name: prompt_version
+          default: ${var.prompt_version}
+      tasks:
+        - task_key: hydrate_all
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/hydrate.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --table
+              - "@golden_set"
+              - --force
+              - --run-id
+              - "eval-{{job.run_id}}"
+              - --fuzzy-accept
+              - ${var.fuzzy_accept}
+              - --prompt-version
+              - "{{job.parameters.prompt_version}}"
+              - --llm-provider
+              - ${var.llm_provider}
+              - --llm-endpoint
+              - ${var.llm_endpoint}
+              - --llm-base-url
+              - ${var.llm_base_url}
+              - --llm-model
+              - ${var.llm_model}
+              - --llm-secret-scope
+              - ${var.llm_secret_scope}
+              - --llm-secret-key
+              - ${var.llm_secret_key}
+        - task_key: score
+          depends_on:
+            - task_key: hydrate_all
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/run_eval.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --run-id
+              - "eval-{{job.run_id}}"
+              - --fuzzy-accept
+              - ${var.fuzzy_accept}
+              - --mlflow-experiment
+              - ${resources.experiments.hydration_eval.name}
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+              - rapidfuzz
+              - databricks-sdk
+              - mlflow
+
+    approve:
+      name: govgates-approve
+      description: Approve then apply for one table - owner permitted uses (set_permitted_use), owner decisions from gov.review_decisions, the auto-rule, then project gov.approved_metadata to UC comments and governed tags in the same run (idempotent; re-run it to repair UC drift)
+      max_concurrent_runs: 1  # permitted-use versioning (max + 1) relies on one run at a time; one apply per table
+      queue:
+        enabled: true  # a second trigger waits instead of being skipped
+      email_notifications:
+        on_failure: ${var.notify_on_failure}  # list, set per target; empty on dev
+      run_as:
+        service_principal_name: ${var.ci_sp}
+      parameters:
+        - name: table
+          default: claims
+      tasks:
+        - task_key: approve
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/approve.py
+            parameters:
+              - --permitted-use-codes
+              - ${var.permitted_use_codes}
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --table
+              - "{{job.parameters.table}}"
+        # Q20: apply-to-UC in the same run, only after approve succeeded (no run_if = ALL_SUCCESS). The only job that
+        # runs apply.py, so two applies can never race on one table.
+        - task_key: apply
+          depends_on:
+            - task_key: approve
+          environment_key: default
+          spark_python_task:
+            python_file: ../src/jobs/apply.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+              - --raw-schema
+              - ${var.raw_schema}
+              - --gov-schema
+              - ${var.gov_schema}
+              - --ref-schema
+              - ${var.ref_schema}
+              - --curated-schema
+              - ${var.curated_schema}
+              - --tag-prefix
+              - ${var.tag_prefix}
+              - --table
+              - "{{job.parameters.table}}"
+      environments:
+        - environment_key: default
+          spec:
+            client: "2"
+            dependencies:
+              - -c ${workspace.file_path}/requirements/jobs.txt
+              - pyyaml
+              - rapidfuzz
+              - databricks-sdk
